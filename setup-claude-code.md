@@ -8,10 +8,10 @@
 
 | 项目 | 值 |
 |---|---|
-| Node.js | v22.22.1 |
 | 代理地址 | `http://localhost:4399` |
-| 主模型 | `opus[1m]` |
+| 主模型 | `claude-opus-4.6-1m` |
 | MCP | Tavily 搜索 |
+| 插件 | context7, code-review, github, playwright, typescript-lsp, frontend-design |
 
 配置文件位置：`~/.claude/settings.json` + `~/.claude/mcp.json`
 
@@ -43,11 +43,13 @@ Windows 路径：`%USERPROFILE%\.claude\settings.json`
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://localhost:4399",
+    "API_TIMEOUT_MS": "3000000",
+    "ANTHROPIC_MODEL": "claude-opus-4.6-1m",
     "ANTHROPIC_AUTH_TOKEN": "dummy",
-    "ANTHROPIC_MODEL": "opus",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-4.1",
-    "ANTHROPIC_SMALL_FAST_MODEL": "gpt-4.1",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-4.1",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus-4.6-1m",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4.5",
+    "ANTHROPIC_SMALL_FAST_MODEL": "claude-opus-4.6-1m",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-opus-4.6-1m",
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
   },
@@ -59,18 +61,19 @@ Windows 路径：`%USERPROFILE%\.claude\settings.json`
     ],
     "deny": [
       "Bash(rm -rf /)", "Bash(rm -rf /*)",
-      "Bash(rm -rf /boot*)", "Bash(rm -rf /etc*)",
-      "Bash(rm -rf /bin*)", "Bash(rm -rf /sbin*)",
-      "Bash(rm -rf /lib*)", "Bash(rm -rf /usr*)",
-      "Bash(rm -rf /var*)", "Bash(rm -rf /sys*)",
-      "Bash(rm -rf /proc*)", "Bash(rm -rf /dev*)",
-      "Bash(dd if=* of=/dev/sd*)", "Bash(dd if=* of=/dev/nvme*)",
-      "Bash(mkfs*)", "Bash(fdisk*)", "Bash(parted*)",
-      "Write(/boot/*)", "Write(/etc/passwd)", "Write(/etc/shadow)", "Write(/etc/sudoers)",
-      "Edit(/boot/*)", "Edit(/etc/passwd)", "Edit(/etc/shadow)", "Edit(/etc/sudoers)"
+      "Bash(Remove-Item -Recurse -Force C:\\*)",
+      "Bash(format *:)", "Bash(diskpart*)"
     ]
   },
-  "model": "opus[1m]"
+  "model": "opus",
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "github@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true
+  }
 }
 ```
 
@@ -80,14 +83,27 @@ Windows 路径：`%USERPROFILE%\.claude\settings.json`
 |---|---|
 | `ANTHROPIC_BASE_URL` | API 代理地址，直连 Anthropic 则删除此项 |
 | `ANTHROPIC_AUTH_TOKEN` | 认证 Token，直连时填 `sk-ant-xxx` |
-| `ANTHROPIC_MODEL` | 主模型 |
+| `API_TIMEOUT_MS` | API 超时（ms），`3000000` = 50 分钟，防长任务断开 |
+| `ANTHROPIC_MODEL` | 主模型，使用原生模型名 `claude-opus-4.6-1m` |
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | 内部 Sonnet 调用替换为指定模型 |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | 内部 Opus 调用替换为指定模型 |
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | 内部 Haiku 调用替换为指定模型 |
 | `ANTHROPIC_SMALL_FAST_MODEL` | 内部快速模型替换 |
 | `DISABLE_NON_ESSENTIAL_MODEL_CALLS` | `1` = 省钱，禁用非核心调用 |
 | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1` = 禁用遥测流量 |
 
-**permissions 规则：** `deny` 优先于 `allow`。语法为 `工具名(glob模式)`。
+**permissions 规则：** `deny` 优先于 `allow`。语法为 `工具名(glob模式)`。deny 已覆盖 Linux（`rm -rf`）和 Windows（`Remove-Item`/`format`/`diskpart`）。
+
+**enabledPlugins：** 官方插件，按需开关。
+
+| 插件 | 用途 |
+|---|---|
+| `context7` | 自动拉取第三方库最新文档作为上下文 |
+| `code-review` | 代码审查 |
+| `github` | GitHub 集成 |
+| `playwright` | 浏览器自动化测试 |
+| `typescript-lsp` | TypeScript 语言服务 |
+| `frontend-design` | 前端设计辅助 |
 
 ### mcp.json
 
@@ -117,16 +133,18 @@ npm install -g @anthropic-ai/claude-code
 # 2. 创建配置目录
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude" | Out-Null
 
-# 3. 写入 settings.json
+# 3. 写入 settings.json（内容同上方"核心配置"）
 @'
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://localhost:4399",
+    "API_TIMEOUT_MS": "3000000",
+    "ANTHROPIC_MODEL": "claude-opus-4.6-1m",
     "ANTHROPIC_AUTH_TOKEN": "dummy",
-    "ANTHROPIC_MODEL": "opus",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-4.1",
-    "ANTHROPIC_SMALL_FAST_MODEL": "gpt-4.1",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-4.1",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus-4.6-1m",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4.5",
+    "ANTHROPIC_SMALL_FAST_MODEL": "claude-opus-4.6-1m",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-opus-4.6-1m",
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
   },
@@ -142,7 +160,15 @@ New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude" | Out-Null
       "Bash(format *:)", "Bash(diskpart*)"
     ]
   },
-  "model": "opus[1m]"
+  "model": "opus",
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "github@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true
+  }
 }
 '@ | Set-Content -Encoding utf8NoBOM -Path "$env:USERPROFILE\.claude\settings.json"
 
@@ -161,8 +187,6 @@ New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude" | Out-Null
 # 5. 验证
 claude --version
 ```
-
-> **注意：** Windows deny 规则用 `Remove-Item`/`format`/`diskpart` 替代 Linux 的 `rm`/`mkfs`/`fdisk`。
 
 ---
 
