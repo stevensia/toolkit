@@ -47,6 +47,10 @@ Magpie 网关处理联网搜索时遵循 **“上游原生搜索优先，Magpie 
   - 默认以 `x-apikey: <YOUR_WEBIQ_API_KEY>` 请求头鉴权，并自动剔除 URL 中可能误带的 `APPID` 查询参数（Web IQ 规范规定：API Key 鉴权携带 `APPID` 参数——即使为空——也会返回 `401 AuthUnauthorizedEntryId`）。
   - 同时兼容 `Bearer <token>` 或 Entra ID OAuth 2.0 JWT 令牌，后续从试用 API Key 迁移到 Entra ID 鉴权无需修改代码。
 - **限流冷却与多 Key 故障转移**：解析 Web IQ 标准错误响应（`errorCode`、`userMessage`、`technicalDetails`、`retryAfter`、`traceId`），自动将 `"60s"` 等时长格式标准化后连同 HTTP 状态码（`401` / `403` / `429`）抛回 Magpie 宿主，触发内置的故障 Key 自动冷却与多 Key 轮换。
+- **Windows 过期 / 临期自动弹窗换 Key 助手**（Linux 服务端自动降级为日志告警）：
+  - **双触发条件**：① Web IQ 返回 `HTTP 401`（Key 过期/失效）时立即弹出（带 10 分钟并发防抖，避免连环弹窗）；② 距离到期日 **≤ 3 天** 时在搜索完成后后台每日温和提醒 1 次。
+  - **一键闭环换 Key**：弹窗内置 **「1. 打开 Web IQ Profiles 页面生成新 Key」** + **「粘贴新 Key」** + **「验证并更新到 Magpie」**，保存前先向 Web IQ 实测验证有效性，验证通过后自动调用本机 `magpie.exe search add webiq-js:web <NEW_KEY>` 原地热更新并记录下一个 30 天周期。
+  - **本地状态零明文**：同目录 `webiq-state.json` 仅保存 Key 的不可逆 SHA-256 前 12 位指纹与到期日期，绝不落盘明文密钥。
 
 ---
 
@@ -101,22 +105,33 @@ magpie settings set searchFirst api
 2. 在搜索 API 列表中找到 **Microsoft Web IQ**（点击右侧链接可直达 `https://webiq.microsoft.ai/profiles/`）。
 3. 填入 `<YOUR_WEBIQ_API_KEY>` 并保存，立即热生效。
 
-### 方式 B：通过 CLI 配置与轮换（适合服务器部署或批量更新）
+### 方式 B：Windows 过期自动弹窗一键更换（零命令）
+
+在 Windows 桌面端运行 Magpie 时：
+- 当 Key **剩余 ≤ 3 天**（默认按首次使用 +30 天推算，或按 `#expires=YYYY-MM-DD` 指定）或 **返回 `HTTP 401` 过期报错** 时，会自动弹出 **「Magpie · Microsoft Web IQ API Key 更新助手」** 窗口。
+- 点击窗口内 **「1. 打开 Web IQ Profiles 页面生成新 Key」** → 复制新 Key → 点击 **「粘贴」** → 点击 **「验证并更新到 Magpie」**，验证通过后立即原地覆盖旧 Key 并热生效。
+- 也可随时手动唤起该窗口提前更换：
+  ```powershell
+  & "$env:USERPROFILE\.cache\magpie\bun\1.4.4\magpie-bun.exe" "$env:USERPROFILE\.config\magpie\webiq.js" --popup
+  # 若系统已安装 bun，也可直接运行：bun "$env:USERPROFILE\.config\magpie\webiq.js" --popup
+  ```
+
+### 方式 C：通过 CLI 配置与轮换（适合服务器部署或脚本更新）
 
 ```bash
-# 添加单把 API Key
+# 添加或原地更新单把 API Key（再次执行会自动覆盖旧 Key 并保留原有 url= 配置）
 magpie search add webiq-js:web "<YOUR_WEBIQ_API_KEY>"
 
-# 同时添加多把 API Key（自动负载均衡与 401/429 故障切换）
+# 同时配置多把 API Key（自动负载均衡与 401/429 故障切换）
 magpie search add webiq-js:web "<KEY_1>,<KEY_2>"
 
-# 查看当前已配置的搜索服务商与脱敏 Key 列表（确认序号）
+# 查看当前已配置的搜索服务商与脱敏 Key 列表
 magpie search
 # 示例输出：
 #   1. Microsoft Web IQ  xxxx…xxxx=
 
-# 旧 Key 到期后按序号移除（例如移除第 1 条）
-magpie search remove 1
+# 如需彻底移除 Microsoft Web IQ 搜索配置
+magpie search rm webiq-js:web
 ```
 
 ---
@@ -140,6 +155,10 @@ magpie search add webiq-js:web "<YOUR_WEBIQ_API_KEY>" \
 | `language` | 不传（自动） | ISO 639-1 双字母语言代码，如 `en`、`zh`、`ja`。 |
 | `region` | 不传（自动） | 2 字母国家/地区代码，如 `US`、`CN`、`SG`。 |
 | `scopeName` | 不传 | 已在 Web IQ 中创建的命名检索范围（Scope）。 |
+| `popup` | `on` | 设为 `off` 可关闭 Windows 过期/临期桌面弹窗（Linux 下默认自动跳过 GUI 弹窗）。 |
+| `expires` | 自动（首次启用 +30 天） | 显式指定当前 Key 到期日 `YYYY-MM-DD`（例如 `expires=2026-12-18`）。 |
+| `ttlDays` | `30` | 新 Key 默认有效期天数（弹窗更新时自动按今天 + `ttlDays` 预填下次到期日）。 |
+| `warnDays` | `3` | 到期前提前多少天开始每日提醒一次（`0` ~ `60`）。 |
 
 ---
 
